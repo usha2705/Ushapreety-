@@ -1,0 +1,139 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+from sklearn.model_selection import cross_val_score
+
+# Set random seed for reproducibility
+np.random.seed(42)
+
+# 1. Data Creation (Synthetic Dataset)
+n_samples = 1000
+data = {
+    'Location': np.random.choice(['Urban', 'Suburban', 'Rural'], n_samples),
+    'Time': pd.date_range(start='2025-01-01', periods=n_samples, freq='H'),
+    'Weather': np.random.choice(['Clear', 'Rain', 'Fog', 'Snow'], n_samples),
+    'Road_Condition': np.random.choice(['Dry', 'Wet', 'Icy'], n_samples),
+    'Traffic_Density': np.random.uniform(10, 100, n_samples),  # Vehicles per km
+    'Speed_Limit': np.random.choice([30, 50, 70, 100], n_samples),  # km/h
+    'Driver_Age': np.random.randint(18, 80, n_samples),
+    'Accident_Severity': np.random.choice(['Minor', 'Moderate', 'Severe', 'Fatal'], n_samples),
+    'Casualties': np.random.randint(0, 5, n_samples)
+}
+df = pd.DataFrame(data)
+
+# 1. Data Description
+print("=== Data Description ===")
+print(f"Shape: {df.shape}")
+print("\nData Types:")
+print(df.dtypes)
+print("\nFirst 5 Rows:")
+print(df.head())
+print("\nSummary Statistics:")
+print(df.describe(include='all'))
+print("\nMissing Values:")
+print(df.isnull().sum())
+print("\nAccident Severity Distribution:")
+print(df['Accident_Severity'].value_counts())
+
+# 2. Data Processing
+# Introduce some missing values for realism
+df.loc[np.random.choice(df.index, 50), 'Weather'] = np.nan
+df.loc[np.random.choice(df.index, 30), 'Driver_Age'] = np.nan
+print("\nMissing Values After Introduction:")
+print(df.isnull().sum())
+
+# Handle missing values
+df['Weather'].fillna(df['Weather'].mode()[0], inplace=True)
+df['Driver_Age'].fillna(df['Driver_Age'].median(), inplace=True)
+print("\nMissing Values After Imputation:")
+print(df.isnull().sum())
+
+# 3. Feature Engineering
+# Extract time-based features
+df['Hour'] = df['Time'].dt.hour
+df['Day_of_Week'] = df['Time'].dt.dayofweek
+df['Is_Night'] = df['Hour'].apply(lambda x: 1 if x >= 18 or x < 6 else 0)
+
+# Interaction feature: High traffic density and high speed
+df['Traffic_Speed_Interaction'] = df['Traffic_Density'] * df['Speed_Limit']
+
+# Encode categorical variables
+le = LabelEncoder()
+categorical_cols = ['Location', 'Weather', 'Road_Condition', 'Accident_Severity']
+for col in categorical_cols:
+    df[col] = le.fit_transform(df[col])
+
+# Define features and target
+X = df.drop(['Accident_Severity', 'Time'], axis=1)  # Drop 'Time' as it's not used directly
+y = df['Accident_Severity']
+
+# Scale numerical features
+scaler = StandardScaler()
+numerical_cols = ['Traffic_Density', 'Speed_Limit', 'Driver_Age', 'Casualties', 'Hour', 'Traffic_Speed_Interaction']
+X[numerical_cols] = scaler.fit_transform(X[numerical_cols])
+
+# 4. Model Building
+# Split data
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Train Random Forest Classifier
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X_train, y_train)
+
+# Predictions
+y_pred = rf_model.predict(X_test)
+
+# Model Evaluation
+print("\n=== Model Performance ===")
+print("Accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=['Fatal', 'Minor', 'Moderate', 'Severe']))
+print("\nCross-Validation Score (5-Fold):", cross_val_score(rf_model, X, y, cv=5).mean())
+
+# Confusion Matrix
+cm = confusion_matrix(y_test, y_pred)
+
+# 5. Visualization of Results
+plt.figure(figsize=(15, 10))
+
+# 1. Accident Severity Distribution
+plt.subplot(2, 2, 1)
+sns.countplot(x='Accident_Severity', data=df)
+plt.title('Accident Severity Distribution')
+plt.xticks(ticks=[0, 1, 2, 3], labels=['Fatal', 'Minor', 'Moderate', 'Severe'])
+
+# 2. Confusion Matrix
+plt.subplot(2, 2, 2)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Fatal', 'Minor', 'Moderate', 'Severe'],
+            yticklabels=['Fatal', 'Minor', 'Moderate', 'Severe'])
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+
+# 3. Feature Importance
+feature_importance = pd.Series(rf_model.feature_importances_, index=X.columns).sort_values(ascending=False)
+plt.subplot(2, 2, 3)
+sns.barplot(x=feature_importance, y=feature_importance.index)
+plt.title('Feature Importance')
+
+# 4. Accidents by Weather and Severity
+plt.subplot(2, 2, 4)
+sns.countplot(x='Weather', hue='Accident_Severity', data=df)
+plt.title('Accidents by Weather')
+plt.xticks(ticks=[0, 1, 2, 3], labels=['Clear', 'Fog', 'Rain', 'Snow'])
+plt.legend(['Fatal', 'Minor', 'Moderate', 'Severe'])
+
+plt.tight_layout()
+plt.show()
+
+# Additional Visualization: Traffic Density vs. Casualties
+plt.figure(figsize=(8, 6))
+sns.scatterplot(x='Traffic_Density', y='Casualties', hue='Accident_Severity', size='Accident_Severity', data=df)
+plt.title('Traffic Density vs. Casualties by Severity')
+plt.legend(labels=['Fatal', 'Minor', 'Moderate', 'Severe'])
+plt.show()
